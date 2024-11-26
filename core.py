@@ -2,10 +2,12 @@ import asyncio
 import os
 import configparser
 import random
+import time
 from collections import deque
 from loguru import logger
 from faker import Faker
 from pyuseragents import random as random_useragent
+import aiohttp
 
 # 日志设置
 logger.add("logs/app.log", rotation="1 day", level="INFO")
@@ -54,36 +56,102 @@ class CaptchaService:
 
 # 账户管理器
 class AccountManager:
-    def __init__(self, threads, ref_codes, captcha_service):
-        self.threads = threads
-        self.ref_codes = ref_codes
+    def __init__(self, captcha_service, ref_codes):
         self.captcha_service = captcha_service
+        self.ref_codes = ref_codes
         self.fake = Faker()
 
     async def register_account(self, email, password, proxy):
-        logger.info(f"注册账户：{email} 使用代理：{proxy}")
-        await asyncio.sleep(random.uniform(1, 3))  # 模拟任务
+        url = "https://api.nodepay.org/api/auth/register"
+        captcha_token = await self.captcha_service.get_captcha_token()
 
-    async def mine_account(self, email, token, proxies):
+        data = {
+            "email": email,
+            "password": password,
+            "username": f"user_{random.randint(1000, 9999)}",
+            "referral_code": random.choice(self.ref_codes),
+            "recaptcha_token": captcha_token,
+        }
+
+        headers = {
+            "User-Agent": random_useragent(),
+            "Content-Type": "application/json",
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=data, headers=headers, proxy=proxy) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    if result.get("success"):
+                        logger.info(f"账户 {email} 注册成功")
+                        return True
+                    else:
+                        logger.error(f"账户 {email} 注册失败: {result.get('msg')}")
+                        return False
+                else:
+                    logger.error(f"账户 {email} 注册失败，HTTP状态码: {response.status}")
+                    return False
+
+    async def get_auth_token(self, email, password, proxy):
+        url = "https://api.nodepay.org/api/auth/login"
+        captcha_token = await self.captcha_service.get_captcha_token()
+
+        data = {
+            "user": email,
+            "password": password,
+            "remember_me": True,
+            "recaptcha_token": captcha_token,
+        }
+
+        headers = {
+            "User-Agent": random_useragent(),
+            "Content-Type": "application/json",
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=data, headers=headers, proxy=proxy) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    if result.get("success"):
+                        logger.info(f"账户 {email} 登录成功")
+                        uid = result["data"]["user_info"]["uid"]
+                        token = result["data"]["token"]
+                        return uid, token
+                    else:
+                        logger.error(f"账户 {email} 登录失败: {result.get('msg')}")
+                        return None, None
+                else:
+                    logger.error(f"账户 {email} 登录失败，HTTP状态码: {response.status}")
+                    return None, None
+
+    async def mine_account(self, email, uid, token, proxies):
+        url = "https://nw.nodepay.org/api/network/ping"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "User-Agent": random_useragent(),
+            "Content-Type": "application/json",
+        }
+
+        data = {
+            "id": uid,
+            "browser_id": f"browser_{random.randint(1000, 9999)}",
+            "timestamp": int(time.time()),
+            "version": "2.2.7",
+        }
+
         for proxy in proxies:
-            logger.info(f"账户 {email} 正在挖矿，使用代理：{proxy}")
-            await asyncio.sleep(random.uniform(1, 3))  # 模拟任务
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=data, headers=headers, proxy=proxy) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if result.get("success"):
+                            logger.info(f"账户 {email} 挖矿成功，代理 {proxy}")
+                        else:
+                            logger.warning(f"账户 {email} 挖矿失败: {result.get('msg')}")
+                    else:
+                        logger.error(f"账户 {email} 挖矿失败，HTTP状态码: {response.status}")
 
-    async def process_account(self, email, password, action):
-        if action == "register":
-            proxy = await get_proxy()  # 获取一个代理
-            try:
-                await self.register_account(email, password, proxy)
-            finally:
-                await release_proxies([proxy])  # 释放代理
-        elif action == "mine":
-            proxies = await get_proxies(count=3)  # 获取 3 个代理
-            try:
-                await self.mine_account(email, "dummy-token", proxies)
-            finally:
-                await release_proxies(proxies)  # 释放代理
-
-# 命令行菜单
+# CLI 菜单
 class ConsoleMenu:
     def __init__(self, config_file="data/settings.ini"):
         self.config_file = config_file
@@ -111,19 +179,25 @@ class ConsoleMenu:
         load_proxy(settings["ProxiesFile"])  # 加载代理列表
         captcha_service = CaptchaService(api_key=settings["CaptchaAPIKey"])
         manager = AccountManager(
-            threads=int(settings["Threads"]),
-            ref_codes=settings["ReferralCodes"].split(","),
             captcha_service=captcha_service,
+            ref_codes=settings["ReferralCodes"].split(","),
         )
 
         if choice == "1":
             for account in accounts:
                 email, password = account.split(":")
-                await manager.process_account(email, password, "register")
+                proxy = await get_proxy()
+                await manager.register_account(email, password, proxy)
+                await release_proxies([proxy])
         elif choice == "2":
             for account in accounts:
                 email, password = account.split(":")
-                await manager.process_account(email, password, "mine")
+                proxy = await get_proxy()
+                uid, token = await manager.get_auth_token(email, password, proxy)
+                if uid and token:
+                    proxies = await get_proxies(count=3)
+                    await manager.mine_account(email, uid, token, proxies)
+                    await release_proxies(proxies)
         elif choice == "3":
             self.show_settings()
 
@@ -142,3 +216,4 @@ class ConsoleMenu:
                 await self.handle_action(choice)
             else:
                 logger.warning("无效的选择，请重新输入。")
+
