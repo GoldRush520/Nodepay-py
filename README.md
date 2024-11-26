@@ -15,8 +15,8 @@
 ### 1. 克隆仓库
 首先，从 Git 仓库克隆项目代码：
 ```bash
-git clone https://github.com/your-repository/nodepay-cli-bot.git
-cd nodepay-cli-bot
+git clone https://github.com/ziqing888/Nodepay-py.git
+cd Nodepay-py
 ```
 ### 2. 安装依赖
 在项目目录下，运行以下命令安装依赖：
