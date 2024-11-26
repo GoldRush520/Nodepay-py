@@ -65,7 +65,7 @@ CaptchaAPIKey = abcd1234efgh5678ijkl90mnopqr
 运行程序
 运行以下命令启动工具：
 ```
-python main.py
+python3 main.py
 ```
 根据提示选择所需功能：
 ```
