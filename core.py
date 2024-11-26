@@ -27,6 +27,11 @@ def load_proxy(proxy_path):
     global proxies
     proxies = deque(file_to_list(proxy_path))
 
+async def get_proxy():
+    """获取一个代理"""
+    async with lock:
+        return proxies.popleft() if proxies else None
+
 async def get_proxies(count=3):
     """获取指定数量的代理"""
     async with lock:
@@ -55,10 +60,9 @@ class AccountManager:
         self.captcha_service = captcha_service
         self.fake = Faker()
 
-    async def register_account(self, email, password, proxies):
-        for proxy in proxies:
-            logger.info(f"注册账户：{email} 使用代理：{proxy}")
-            await asyncio.sleep(random.uniform(1, 3))  # 模拟任务
+    async def register_account(self, email, password, proxy):
+        logger.info(f"注册账户：{email} 使用代理：{proxy}")
+        await asyncio.sleep(random.uniform(1, 3))  # 模拟任务
 
     async def mine_account(self, email, token, proxies):
         for proxy in proxies:
@@ -66,14 +70,18 @@ class AccountManager:
             await asyncio.sleep(random.uniform(1, 3))  # 模拟任务
 
     async def process_account(self, email, password, action):
-        proxies = await get_proxies(count=3)  # 获取 3 个代理
-        try:
-            if action == "register":
-                await self.register_account(email, password, proxies)
-            elif action == "mine":
+        if action == "register":
+            proxy = await get_proxy()  # 获取一个代理
+            try:
+                await self.register_account(email, password, proxy)
+            finally:
+                await release_proxies([proxy])  # 释放代理
+        elif action == "mine":
+            proxies = await get_proxies(count=3)  # 获取 3 个代理
+            try:
                 await self.mine_account(email, "dummy-token", proxies)
-        finally:
-            await release_proxies(proxies)  # 释放代理
+            finally:
+                await release_proxies(proxies)  # 释放代理
 
 # 命令行菜单
 class ConsoleMenu:
