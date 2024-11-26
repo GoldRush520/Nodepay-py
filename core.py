@@ -1,13 +1,11 @@
 import asyncio
 import os
 import configparser
-import json
 import random
 from collections import deque
 from loguru import logger
 from faker import Faker
 from pyuseragents import random as random_useragent
-
 
 # 日志设置
 logger.add("logs/app.log", rotation="1 day", level="INFO")
@@ -29,13 +27,16 @@ def load_proxy(proxy_path):
     global proxies
     proxies = deque(file_to_list(proxy_path))
 
-async def get_proxy():
+async def get_proxies(count=3):
+    """获取指定数量的代理"""
     async with lock:
-        return proxies.popleft() if proxies else None
+        selected_proxies = [proxies.popleft() for _ in range(min(count, len(proxies)))]
+        return selected_proxies
 
-async def release_proxy(proxy):
+async def release_proxies(used_proxies):
+    """释放多个代理回到队列"""
     async with lock:
-        proxies.append(proxy)
+        proxies.extend(used_proxies)
 
 # CAPTCHA 验证服务
 class CaptchaService:
@@ -54,21 +55,25 @@ class AccountManager:
         self.captcha_service = captcha_service
         self.fake = Faker()
 
-    async def register_account(self, email, password):
-        logger.info(f"注册账户：{email}")
-        await asyncio.sleep(random.uniform(1, 3))
-        return True
+    async def register_account(self, email, password, proxies):
+        for proxy in proxies:
+            logger.info(f"注册账户：{email} 使用代理：{proxy}")
+            await asyncio.sleep(random.uniform(1, 3))  # 模拟任务
 
-    async def mine_account(self, email, token):
-        logger.info(f"账户 {email} 正在挖矿")
-        await asyncio.sleep(random.uniform(1, 3))
-        return True
+    async def mine_account(self, email, token, proxies):
+        for proxy in proxies:
+            logger.info(f"账户 {email} 正在挖矿，使用代理：{proxy}")
+            await asyncio.sleep(random.uniform(1, 3))  # 模拟任务
 
     async def process_account(self, email, password, action):
-        if action == "register":
-            await self.register_account(email, password)
-        elif action == "mine":
-            await self.mine_account(email, "dummy-token")
+        proxies = await get_proxies(count=3)  # 获取 3 个代理
+        try:
+            if action == "register":
+                await self.register_account(email, password, proxies)
+            elif action == "mine":
+                await self.mine_account(email, "dummy-token", proxies)
+        finally:
+            await release_proxies(proxies)  # 释放代理
 
 # 命令行菜单
 class ConsoleMenu:
@@ -95,7 +100,7 @@ class ConsoleMenu:
     async def handle_action(self, choice):
         settings = self.config["DEFAULT"]
         accounts = file_to_list(settings["AccountsFile"])
-        load_proxy(settings["ProxiesFile"])
+        load_proxy(settings["ProxiesFile"])  # 加载代理列表
         captcha_service = CaptchaService(api_key=settings["CaptchaAPIKey"])
         manager = AccountManager(
             threads=int(settings["Threads"]),
