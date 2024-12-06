@@ -1,9 +1,6 @@
-aiohttp==3.8.5
-asyncio==3.4.3
-cloudscraper==1.2.58
-fake-useragent==1.1.1
-loguru==0.6.0
-pyfiglet==0.8.post1
-python-dateutil==2.8.2
-termcolor==2.3.0
-
+asyncio
+aiohttp
+uuid
+cloudscraper
+loguru
+colorama
