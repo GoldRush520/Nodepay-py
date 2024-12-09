@@ -25,7 +25,7 @@ HEADER = {
 }
 
 # 从文件中读取代理
-def read_proxies_from_file(file_path: str = 'proxies.txt') -> list:
+def read_proxies_from_file(file_path: str = 'proxie.txt') -> list:
     try:
         with open(file_path, 'r') as file:
             return [line.strip() for line in file if line.strip()]
