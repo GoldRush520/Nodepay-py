@@ -17,6 +17,7 @@ init(autoreset=True)
 logger.remove()
 logger.add(sys.stderr, format="{time} {level} - {message}", level="INFO", colorize=True)
 
+
 def clear_screen():
     # Clear the screen based on the operating system
     if os.name == 'posix':
@@ -26,14 +27,17 @@ def clear_screen():
     else:
         print("\n" * 100)  # Fallback: Print 100 new lines
 
+
 def show_warning():
-    confirm = input(f"{Fore.YELLOW}多账户NODEPAY机器人 \n\n请确保您有:\n1. 包含您Nodepay令牌的token.txt文件（每行一个）\n2. 包含您的代理列表的proxy.txt文件\n注意：每个令牌最多将获得3个代理\n\n按Enter键继续或按Ctrl+C取消... {Style.RESET_ALL}")
+    confirm = input(
+        f"{Fore.YELLOW}多账户NODEPAY机器人 \n\n请确保您有:\n1. 包含您Nodepay令牌的token.txt文件（每行一个）\n2. 包含您的代理列表的proxy.txt文件\n注意：每个令牌最多将获得3个代理\n\n按Enter键继续或按Ctrl+C取消... {Style.RESET_ALL}")
 
     if confirm.strip() == "":
         print(f"{Fore.GREEN}继续...{Style.RESET_ALL}")
     else:
         print(f"{Fore.RED}退出...{Style.RESET_ALL}")
         exit()
+
 
 def display_menu():
     print(f"\n请选择一个选项:")
@@ -42,8 +46,10 @@ def display_menu():
     choice = input(f"{Fore.CYAN}输入选项编号: {Style.RESET_ALL}")
     return choice
 
+
 def register_accounts():
     print(f"{Fore.MAGENTA}注册账户功能尚未实现。{Style.RESET_ALL}")
+
 
 # 常量
 PING_INTERVAL = 60
@@ -65,13 +71,16 @@ browser_id = None
 account_info = {}
 last_ping_time = {}
 
+
 def uuidv4():
     return str(uuid.uuid4())
+
 
 def valid_resp(resp):
     if not resp or "code" not in resp or resp["code"] < 0:
         raise ValueError("无效的响应")
     return resp
+
 
 async def render_profile_info(proxy, token):
     global browser_id, account_info
@@ -98,6 +107,7 @@ async def render_profile_info(proxy, token):
         remove_proxy_from_list(proxy)
         return None
 
+
 async def call_api(url, data, proxy, token):
     user_agent = UserAgent(os=['windows', 'macos', 'linux'], browsers='chrome')
     random_user_agent = user_agent.random
@@ -111,14 +121,20 @@ async def call_api(url, data, proxy, token):
     }
 
     try:
-        response = requests.post(url, json=data, headers=headers, impersonate="chrome110", proxies={
-                                "http": proxy, "https": proxy}, timeout=30)
+        if proxy is None:
+            response = requests.post(url, json=data, headers=headers, impersonate="chrome110", proxies={
+                "http": proxy, "https": proxy}, timeout=30)
+            pass
+        else:
+            response = requests.post(url, json=data, headers=headers, impersonate="chrome110")
+            pass
 
         response.raise_for_status()
         return valid_resp(response.json())
     except Exception as e:
         # No error logging here
         pass
+
 
 async def start_ping(proxy, token):
     try:
@@ -130,6 +146,7 @@ async def start_ping(proxy, token):
     except Exception as e:
         # No error logging here
         pass
+
 
 async def ping(proxy, token):
     global last_ping_time, RETRIES, status_connect
@@ -157,7 +174,7 @@ async def ping(proxy, token):
                 ip_score_chinese = f"{Fore.GREEN}IP分数: {ip_score}{Style.RESET_ALL}"
             else:
                 ip_score_chinese = f"{Fore.YELLOW}IP分数: {ip_score}（非数值）{Style.RESET_ALL}"
-            
+
             logger.info(f"{Fore.CYAN}Ping成功，代理 {proxy}，{ip_score_chinese}{Style.RESET_ALL}")
             RETRIES = 0
             status_connect = CONNECTION_STATES["已连接"]
@@ -165,13 +182,16 @@ async def ping(proxy, token):
         # No error logging here
         pass
 
+
 def handle_ping_fail(proxy, response):
     # No error logging here
     pass
 
+
 def handle_logout(proxy):
     # No error logging here
     pass
+
 
 def load_proxies(proxy_file):
     try:
@@ -180,7 +200,9 @@ def load_proxies(proxy_file):
         return proxies
     except Exception as e:
         # No error logging here
-        raise SystemExit(f"{Fore.RED}由于加载代理失败，程序退出。{Style.RESET_ALL}")
+        print("代理为空，默认不使用代理。")
+        return None
+
 
 def load_tokens(token_file):
     try:
@@ -191,8 +213,10 @@ def load_tokens(token_file):
         # No error logging here
         raise SystemExit(f"{Fore.RED}由于加载令牌失败，程序退出。{Style.RESET_ALL}")
 
+
 def save_status(proxy, status):
     pass
+
 
 def save_session_info(proxy, data):
     data_to_save = {
@@ -201,14 +225,18 @@ def save_session_info(proxy, data):
     }
     pass
 
+
 def load_session_info(proxy):
     return {}
+
 
 def is_valid_proxy(proxy):
     return True
 
+
 def remove_proxy_from_list(proxy):
     pass
+
 
 async def main():
     clear_screen()
@@ -226,10 +254,11 @@ async def main():
             token_proxy_pairs.append((token, all_proxies[i]))
         else:
             logger.warning(f"{Fore.YELLOW}警告：代理数量不足，token {token[:8]}... 未分配代理{Style.RESET_ALL}")
+            token_proxy_pairs.append((token, None))
 
     while True:
         choice = display_menu()
-        
+
         if choice == "1":
             print(f"{Fore.GREEN}启动节点...{Style.RESET_ALL}")
             while True:
@@ -246,6 +275,7 @@ async def main():
             register_accounts()
         else:
             print(f"{Fore.RED}无效的选项。请选择1或2。{Style.RESET_ALL}")
+
 
 if __name__ == '__main__':
     show_warning()
