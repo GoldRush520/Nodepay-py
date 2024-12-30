@@ -289,113 +289,134 @@ class Nodepay:
                 print(f"{Fore.RED + Style.BRIGHT}无效输入。请输入数字（1、2或3）。{Style.RESET_ALL}")
             
     async def process_accounts(self, token: str, use_proxy: bool):
-    # 隐藏token信息，提升安全性
-    hide_token = self.hide_token(token)
-    proxy = None
+        # 隐藏token信息，提升安全性
+        hide_token = self.hide_token(token)
+        proxy = None
 
-    if not use_proxy:
-        # 不使用代理时，直接获取用户信息和收益信息
-        user = await self.user_session(token)
-        earn = await self.user_earning(token)
-        
-        if not user or not earn:
-            # 登录失败日志输出
+        if not use_proxy:
+            # 不使用代理时，直接获取用户信息和收益信息
+            user = await self.user_session(token)
+            earn = await self.user_earning(token)
+            
+            if not user or not earn:
+                # 登录失败日志输出
+                self.log(
+                    f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} {hide_token} {Style.RESET_ALL}"
+                    f"{Fore.RED + Style.BRIGHT} 登录失败{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} 无代理 {proxy} {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+                )
+                return
+            
+            # 获取用户名和用户ID
+            username = user['name']
+            id = user['uid']
+            
+            # 登录成功并输出用户收益情况
             self.log(
                 f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT} {hide_token} {Style.RESET_ALL}"
-                f"{Fore.RED + Style.BRIGHT} 登录失败{Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT} 无代理 {proxy} {Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                f"{Fore.GREEN + Style.BRIGHT} 登录成功{Style.RESET_ALL}"
+                f"{Fore.MAGENTA + Style.BRIGHT} ] [ 收益{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} 总计 {earn['total_earning']} 积分 {Style.RESET_ALL}"
+                f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL} "
+                f"{Fore.WHITE + Style.BRIGHT} 今日 {earn['today_earning']} 积分 {Style.RESET_ALL}"
                 f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
             )
-            return
-        
-        # 获取用户名和用户ID
-        username = user['name']
-        id = user['uid']
-        
-        # 登录成功并输出用户收益情况
-        self.log(
-            f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
-            f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
-            f"{Fore.GREEN + Style.BRIGHT} 登录成功{Style.RESET_ALL}"
-            f"{Fore.MAGENTA + Style.BRIGHT} ] [ 收益{Style.RESET_ALL}"
-            f"{Fore.WHITE + Style.BRIGHT} 总计 {earn['total_earning']} 积分 {Style.RESET_ALL}"
-            f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
-            f"{Fore.WHITE + Style.BRIGHT} 今日 {earn['today_earning']} 积分 {Style.RESET_ALL}"
-            f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
-        )
-        await asyncio.sleep(1)
+            await asyncio.sleep(1)
 
-        # 获取任务列表
-        missions = await self.mission_lists(token)
-        if missions:
-            completed = False
-            for mission in missions:
-                mission_id = mission['id']
-                status = mission['status']
-                if mission and status == "AVAILABLE":
-                    # 完成任务
-                    complete = await self.complete_missions(token, mission_id)
-                    if complete:
-                        self.log(
-                            f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
-                            f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
-                            f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
-                            f"{Fore.WHITE + Style.BRIGHT} {mission['title']} {Style.RESET_ALL}"
-                            f"{Fore.GREEN + Style.BRIGHT} 已完成{Style.RESET_ALL}"
-                            f"{Fore.MAGENTA + Style.BRIGHT} ] [ 奖励{Style.RESET_ALL}"
-                            f"{Fore.WHITE + Style.BRIGHT} {mission['point']} {Style.RESET_ALL}"
-                            f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
-                        )
+            # 获取任务列表
+            missions = await self.mission_lists(token)
+            if missions:
+                completed = False
+                for mission in missions:
+                    mission_id = mission['id']
+                    status = mission['status']
+                    if mission and status == "AVAILABLE":
+                        # 完成任务
+                        complete = await self.complete_missions(token, mission_id)
+                        if complete:
+                            self.log(
+                                f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                                f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                                f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+                                f"{Fore.WHITE + Style.BRIGHT} {mission['title']} {Style.RESET_ALL}"
+                                f"{Fore.GREEN + Style.BRIGHT} 已完成{Style.RESET_ALL}"
+                                f"{Fore.MAGENTA + Style.BRIGHT} ] [ 奖励{Style.RESET_ALL}"
+                                f"{Fore.WHITE + Style.BRIGHT} {mission['point']} {Style.RESET_ALL}"
+                                f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+                            )
+                        else:
+                            self.log(
+                                f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                                f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                                f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+                                f"{Fore.WHITE + Style.BRIGHT} {mission['title']} {Style.RESET_ALL}"
+                                f"{Fore.RED + Style.BRIGHT} 未完成{Style.RESET_ALL}"
+                                f"{Fore.MAGENTA + Style.BRIGHT} ]{Style.RESET_ALL}"
+                            )
                     else:
-                        self.log(
-                            f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
-                            f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
-                            f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
-                            f"{Fore.WHITE + Style.BRIGHT} {mission['title']} {Style.RESET_ALL}"
-                            f"{Fore.RED + Style.BRIGHT} 未完成{Style.RESET_ALL}"
-                            f"{Fore.MAGENTA + Style.BRIGHT} ]{Style.RESET_ALL}"
-                        )
-                else:
-                    completed = True
+                        completed = True
 
-            if completed:
+                if completed:
+                    self.log(
+                        f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                        f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+                        f"{Fore.GREEN + Style.BRIGHT} 可用任务已完成 {Style.RESET_ALL}"
+                        f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+                    )
+            else:
                 self.log(
                     f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
                     f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
                     f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
-                    f"{Fore.GREEN + Style.BRIGHT} 可用任务已完成 {Style.RESET_ALL}"
+                    f"{Fore.RED + Style.BRIGHT} 任务数据为空 {Style.RESET_ALL}"
                     f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
                 )
-        else:
-            self.log(
-                f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
-                f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
-                f"{Fore.RED + Style.BRIGHT} 任务数据为空 {Style.RESET_ALL}"
-                f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+            await asyncio.sleep(1)
+
+            # 输出正在进行的ping请求状态
+            print(
+                f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+                f"{Fore.BLUE + Style.BRIGHT} 正在发送 Ping,{Style.RESET_ALL}"
+                f"{Fore.YELLOW + Style.BRIGHT} 等待中... {Style.RESET_ALL}",
+                end="\r",
+                flush=True
             )
-        await asyncio.sleep(1)
+            await asyncio.sleep(1)
 
-        # 输出正在进行的ping请求状态
-        print(
-            f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
-            f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
-            f"{Fore.BLUE + Style.BRIGHT} 正在发送 Ping,{Style.RESET_ALL}"
-            f"{Fore.YELLOW + Style.BRIGHT} 等待中... {Style.RESET_ALL}",
-            end="\r",
-            flush=True
-        )
-        await asyncio.sleep(1)
+            while True:
+                ping = self.send_ping(token, id)
+                if not ping:
+                    self.log(
+                        f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                        f"{Fore.YELLOW + Style.BRIGHT} Ping失败{Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT} 无代理 {proxy} {Style.RESET_ALL}"
+                        f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+                    )
+                    await asyncio.sleep(1)
 
-        while True:
-            ping = self.send_ping(token, id)
-            if not ping:
+                    print(
+                        f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+                        f"{Fore.BLUE + Style.BRIGHT} 下一次Ping在1分钟后.{Style.RESET_ALL}"
+                        f"{Fore.YELLOW + Style.BRIGHT} 等待中... {Style.RESET_ALL}",
+                        end="\r"
+                    )
+                    await asyncio.sleep(60)
+                    continue
+
                 self.log(
                     f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
                     f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
-                    f"{Fore.YELLOW + Style.BRIGHT} Ping失败{Style.RESET_ALL}"
+                    f"{Fore.GREEN + Style.BRIGHT} Ping成功{Style.RESET_ALL}"
                     f"{Fore.WHITE + Style.BRIGHT} 无代理 {proxy} {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA + Style.BRIGHT}] [ IP得分{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} {ping['ip_score']} {Style.RESET_ALL}"
                     f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
                 )
                 await asyncio.sleep(1)
@@ -408,155 +429,133 @@ class Nodepay:
                     end="\r"
                 )
                 await asyncio.sleep(60)
-                continue
+
+        else:
+            # 使用代理时，获取代理并循环进行尝试
+            user = None
+            earn = None
+            proxies = self.get_next_proxy()
+            proxy = self.check_proxy_schemes(proxies)
+
+            while user is None or earn is None:
+                user = await self.user_session(token, proxy)
+                earn = await self.user_earning(token, proxy)
+
+                if not user or not earn:
+                    self.log(
+                        f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT} {hide_token} {Style.RESET_ALL}"
+                        f"{Fore.RED + Style.BRIGHT} 登录失败{Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT} 使用代理 {proxy} {Style.RESET_ALL}"
+                        f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+                    )
+                    await asyncio.sleep(1)
+
+                    print(
+                        f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+                        f"{Fore.BLUE + Style.BRIGHT} 正在尝试下一个代理,{Style.RESET_ALL}"
+                        f"{Fore.YELLOW + Style.BRIGHT} 等待中... {Style.RESET_ALL}",
+                        end="\r",
+                        flush=True
+                    )
+
+                    proxies = self.get_next_proxy()
+                    proxy = self.check_proxy_schemes(proxies)
+                    continue
+            
+            # 用户登录成功后的操作与不使用代理时类似
+            username = user['name']
+            id = user['uid']
 
             self.log(
                 f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
                 f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
-                f"{Fore.GREEN + Style.BRIGHT} Ping成功{Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT} 无代理 {proxy} {Style.RESET_ALL}"
-                f"{Fore.MAGENTA + Style.BRIGHT}] [ IP得分{Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT} {ping['ip_score']} {Style.RESET_ALL}"
+                f"{Fore.GREEN + Style.BRIGHT} 登录成功{Style.RESET_ALL}"
+                f"{Fore.MAGENTA + Style.BRIGHT} ] [ 收益{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} 总计 {earn['total_earning']} 积分 {Style.RESET_ALL}"
+                f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} 今日 {earn['today_earning']} 积分 {Style.RESET_ALL}"
                 f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
             )
             await asyncio.sleep(1)
 
-            print(
-                f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
-                f"{Fore.BLUE + Style.BRIGHT} 下一次Ping在1分钟后.{Style.RESET_ALL}"
-                f"{Fore.YELLOW + Style.BRIGHT} 等待中... {Style.RESET_ALL}",
-                end="\r"
-            )
-            await asyncio.sleep(60)
-
-    else:
-        # 使用代理时，获取代理并循环进行尝试
-        user = None
-        earn = None
-        proxies = self.get_next_proxy()
-        proxy = self.check_proxy_schemes(proxies)
-
-        while user is None or earn is None:
-            user = await self.user_session(token, proxy)
-            earn = await self.user_earning(token, proxy)
-
-            if not user or not earn:
-                self.log(
-                    f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
-                    f"{Fore.WHITE + Style.BRIGHT} {hide_token} {Style.RESET_ALL}"
-                    f"{Fore.RED + Style.BRIGHT} 登录失败{Style.RESET_ALL}"
-                    f"{Fore.WHITE + Style.BRIGHT} 使用代理 {proxy} {Style.RESET_ALL}"
-                    f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
-                )
-                await asyncio.sleep(1)
-
-                print(
-                    f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
-                    f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
-                    f"{Fore.BLUE + Style.BRIGHT} 正在尝试下一个代理,{Style.RESET_ALL}"
-                    f"{Fore.YELLOW + Style.BRIGHT} 等待中... {Style.RESET_ALL}",
-                    end="\r",
-                    flush=True
-                )
-
-                proxies = self.get_next_proxy()
-                proxy = self.check_proxy_schemes(proxies)
-                continue
-        
-        # 用户登录成功后的操作与不使用代理时类似
-        username = user['name']
-        id = user['uid']
-
-        self.log(
-            f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
-            f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
-            f"{Fore.GREEN + Style.BRIGHT} 登录成功{Style.RESET_ALL}"
-            f"{Fore.MAGENTA + Style.BRIGHT} ] [ 收益{Style.RESET_ALL}"
-            f"{Fore.WHITE + Style.BRIGHT} 总计 {earn['total_earning']} 积分 {Style.RESET_ALL}"
-            f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
-            f"{Fore.WHITE + Style.BRIGHT} 今日 {earn['today_earning']} 积分 {Style.RESET_ALL}"
-            f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
-        )
-        await asyncio.sleep(1)
-
-        # 获取任务列表并处理
-        missions = await self.mission_lists(token, proxy)
-        if missions:
-            completed = False
-            for mission in missions:
-                mission_id = mission['id']
-                status = mission['status']
-                if mission and status == "AVAILABLE":
-                    complete = await self.complete_missions(token, mission_id, proxy)
-                    if complete:
-                        self.log(
-                            f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
-                            f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
-                            f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
-                            f"{Fore.WHITE + Style.BRIGHT} {mission['title']} {Style.RESET_ALL}"
-                            f"{Fore.GREEN + Style.BRIGHT} 已完成{Style.RESET_ALL}"
-                            f"{Fore.MAGENTA + Style.BRIGHT} ] [ 奖励{Style.RESET_ALL}"
-                            f"{Fore.WHITE + Style.BRIGHT} {mission['point']} {Style.RESET_ALL}"
-                            f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
-                        )
+            # 获取任务列表并处理
+            missions = await self.mission_lists(token, proxy)
+            if missions:
+                completed = False
+                for mission in missions:
+                    mission_id = mission['id']
+                    status = mission['status']
+                    if mission and status == "AVAILABLE":
+                        complete = await self.complete_missions(token, mission_id, proxy)
+                        if complete:
+                            self.log(
+                                f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                                f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                                f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+                                f"{Fore.WHITE + Style.BRIGHT} {mission['title']} {Style.RESET_ALL}"
+                                f"{Fore.GREEN + Style.BRIGHT} 已完成{Style.RESET_ALL}"
+                                f"{Fore.MAGENTA + Style.BRIGHT} ] [ 奖励{Style.RESET_ALL}"
+                                f"{Fore.WHITE + Style.BRIGHT} {mission['point']} {Style.RESET_ALL}"
+                                f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+                            )
+                        else:
+                            self.log(
+                                f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                                f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                                f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+                                f"{Fore.WHITE + Style.BRIGHT} {mission['title']} {Style.RESET_ALL}"
+                                f"{Fore.RED + Style.BRIGHT} 未完成{Style.RESET_ALL}"
+                                f"{Fore.MAGENTA + Style.BRIGHT} ]{Style.RESET_ALL}"
+                            )
                     else:
-                        self.log(
-                            f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
-                            f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
-                            f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
-                            f"{Fore.WHITE + Style.BRIGHT} {mission['title']} {Style.RESET_ALL}"
-                            f"{Fore.RED + Style.BRIGHT} 未完成{Style.RESET_ALL}"
-                            f"{Fore.MAGENTA + Style.BRIGHT} ]{Style.RESET_ALL}"
-                        )
-                else:
-                    completed = True
+                        completed = True
 
-            if completed:
+                if completed:
+                    self.log(
+                        f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                        f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+                        f"{Fore.GREEN + Style.BRIGHT} 可用任务已完成 {Style.RESET_ALL}"
+                        f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+                    )
+            else:
                 self.log(
                     f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
                     f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
                     f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
-                    f"{Fore.GREEN + Style.BRIGHT} 可用任务已完成 {Style.RESET_ALL}"
+                    f"{Fore.RED + Style.BRIGHT} 任务数据为空 {Style.RESET_ALL}"
                     f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
                 )
-        else:
-            self.log(
-                f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
-                f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
-                f"{Fore.RED + Style.BRIGHT} 任务数据为空 {Style.RESET_ALL}"
-                f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+            await asyncio.sleep(1)
+
+            # 输出正在进行的ping请求状态
+            print(
+                f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+                f"{Fore.BLUE + Style.BRIGHT} 正在发送 Ping,{Style.RESET_ALL}"
+                f"{Fore.YELLOW + Style.BRIGHT} 等待中... {Style.RESET_ALL}",
+                end="\r",
+                flush=True
             )
-        await asyncio.sleep(1)
+            await asyncio.sleep(1)
 
-        # 输出正在进行的ping请求状态
-        print(
-            f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
-            f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
-            f"{Fore.BLUE + Style.BRIGHT} 正在发送 Ping,{Style.RESET_ALL}"
-            f"{Fore.YELLOW + Style.BRIGHT} 等待中... {Style.RESET_ALL}",
-            end="\r",
-            flush=True
-        )
-        await asyncio.sleep(1)
+            # 选择多个代理并进行连接状态验证
+            selected_proxies = []
 
-        # 选择多个代理并进行连接状态验证
-        selected_proxies = []
+            for _ in range(3):
+                proxy = self.get_next_proxy()
+                if proxy:
+                    selected_proxies.append(self.check_proxy_schemes(proxy))
 
-        for _ in range(3):
-            proxy = self.get_next_proxy()
-            if proxy:
-                selected_proxies.append(self.check_proxy_schemes(proxy))
+            # 创建多个任务进行并发处理
+            tasks = [
+                asyncio.create_task(self.connection_state(token, username, id, proxy))
+                for proxy in selected_proxies
+            ]
+            await asyncio.gather(*tasks)
 
-        # 创建多个任务进行并发处理
-        tasks = [
-            asyncio.create_task(self.connection_state(token, username, id, proxy))
-            for proxy in selected_proxies
-        ]
-        await asyncio.gather(*tasks)
-
-    
     async def main(self):
         try:
             with open('tokens.txt', 'r') as file:
