@@ -1,44 +1,69 @@
-一个用于自动化 Nodepay 空投交互的机器人，包括会话管理和带代理支持的 Ping 功
-能。
+# Nodepay 机器人
+Nodepay 机器人
 
-1.获取 nodepay 的 token
+
+
+## 功能
+
+  - 自动获取账户信息  
+  - 如果选择 1，自动运行并使用自动代理 [使用 [Monosans 代理](https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/all.txt)]  
+  - 如果选择 2，自动运行并使用手动代理 [将您的个人代理粘贴到 manual_proxy.txt 文件中]  
+  - 如果选择 3，自动运行不使用代理  
+  - 自动完成可用任务  
+  - 每 1 分钟自动发送 Ping（3 种连接状态）  
+  - 支持多账户并行运行
+
+## 先决条件
+
+确保您已安装 Python 3.9 和 PIP。
+
+## 安装
+
+1. **克隆仓库：**
+   ```bash
+   git clone https://github.com/ziqing888/Nodepay-py.git
+   ```
+```bash
+cd Nodepay-py
+ ```
+2.安装依赖：
+```bash
+pip install -r requirements.txt #或者 pip3 install -r requirements.txt
+```
+## 配置
+tokens.txt： 您将在项目目录中找到 tokens.txt 文件。确保 tokens.txt 文件包含符合脚本要求格式的数据。以下是文件格式示例：
+```bash
+  eyjxxxxx1
+  eyjxxxxx2
+```
+manual_proxy.txt： 您将在项目目录中找到 manual_proxy.txt 文件。确保 manual_proxy.txt 文件包含符合脚本要求格式的数据。以下是文件格式示例：
+```bash
+ip:port（http 或 socks5 - 在 108 行更改协议）
+http://ip:port
+socks4://ip:port
+socks5://ip:port
+http://ip:port@user:pass（不确定是否有效，因为我没有认证代理）
+socks4://ip:port@user:pass（不确定是否有效，因为我没有认证代理）
+socks5://ip:port@user:pass（不确定是否有效，因为我没有认证代理）
+```
+## 运行脚本
+```
+python bot.py #或者 python3 bot.py
+```
+## 获取 nodepay 的 token
 
 在浏览器中打开 开发者工具（右键 > 检查 或 按 Ctrl+Shift+I，或 F12）。
 
 进入开发者工具中的“控制台”或“Console”标签。
 
 输入以下命令获取令牌：
-
-
-
+```bash
 localStorage.getItem('np_webapp_token')
-
+```
 ![image](https://github.com/user-attachments/assets/a806a4c5-0a7b-40e1-ac04-b0907b3552b8)
 
 
 红色的就是 token
 
-并将您的 token 粘贴到文件中（每行一个令牌）。token.txt
+## 感谢您访问本仓库，别忘了给我们关注和加星。如果您有任何问题、发现问题或有改进建议，请随时联系我或在 GitHub 仓库中创建 issue。
 
-![image](https://github.com/user-attachments/assets/fe09bfe9-cd25-48c7-aff7-fd6a871960ad)
-
-例：token.txt
-
-示例
-
-ey...
-
-ey...
-
-ey...
-
-2. 添加代理
-
-将代理信息添加到 proxy.txt 中。每行的格式如下：
-
-http://username:pass@ip:port
-![image](https://github.com/user-attachments/assets/b3a4b3bf-9add-45f8-9b7c-ad52df4ae3ec)
-
-token.txt 里面一个 token 复制三遍，对应三个不同 IP
-
-tokens.txt 一行一个 token 不用复制，这个文件用来检查代理的运行情况
