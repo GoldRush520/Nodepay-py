@@ -1,257 +1,608 @@
-import asyncio
-import aiohttp
-import time
-import uuid
-import sys
-import os
-
+from aiohttp import (
+    ClientResponseError,
+    ClientSession,
+    ClientTimeout
+)
 from curl_cffi import requests
-from loguru import logger
-from colorama import Fore, Style, init
-from fake_useragent import UserAgent
+from aiohttp_socks import ProxyConnector
+from colorama import *
+from datetime import datetime
+from fake_useragent import FakeUserAgent
+import asyncio, time, json, os, uuid, pytz
 
-# 初始化colorama以支持Windows系统
-init(autoreset=True)
+# 设置时区为雅加达时区（可以根据需要修改为北京时间）
+wib = pytz.timezone('Asia/Jakarta')
 
-# 配置logger，只显示INFO级别以上的日志
-logger.remove()
-logger.add(sys.stderr, format="{time} {level} - {message}", level="INFO", colorize=True)
-
-def clear_screen():
-    # Clear the screen based on the operating system
-    if os.name == 'posix':
-        os.system('clear')
-    elif os.name == 'nt':
-        os.system('cls')
-    else:
-        print("\n" * 100)  # Fallback: Print 100 new lines
-
-def show_warning():
-    confirm = input(f"{Fore.YELLOW}多账户NODEPAY机器人 \n\n请确保您有:\n1. 包含您Nodepay令牌的token.txt文件（每行一个）\n2. 包含您的代理列表的proxy.txt文件\n注意：每个令牌最多将获得3个代理\n\n按Enter键继续或按Ctrl+C取消... {Style.RESET_ALL}")
-
-    if confirm.strip() == "":
-        print(f"{Fore.GREEN}继续...{Style.RESET_ALL}")
-    else:
-        print(f"{Fore.RED}退出...{Style.RESET_ALL}")
-        exit()
-
-def display_menu():
-    print(f"\n请选择一个选项:")
-    print(f"{Fore.GREEN}1. 启动节点{Style.RESET_ALL}")
-    print(f"{Fore.YELLOW}2. 注册账户{Style.RESET_ALL}")
-    choice = input(f"{Fore.CYAN}输入选项编号: {Style.RESET_ALL}")
-    return choice
-
-def register_accounts():
-    print(f"{Fore.MAGENTA}注册账户功能尚未实现。{Style.RESET_ALL}")
-
-# 常量
-PING_INTERVAL = 60
-RETRIES = 60
-
-DOMAIN_API = {
-    "SESSION": "http://api.nodepay.ai/api/auth/session",
-    "PING": "https://nw.nodepay.org/api/network/ping"
-}
-
-CONNECTION_STATES = {
-    "已连接": 1,
-    "已断开": 2,
-    "无连接": 3
-}
-
-status_connect = CONNECTION_STATES["无连接"]
-browser_id = None
-account_info = {}
-last_ping_time = {}
-
-def uuidv4():
-    return str(uuid.uuid4())
-
-def valid_resp(resp):
-    if not resp or "code" not in resp or resp["code"] < 0:
-        raise ValueError("无效的响应")
-    return resp
-
-async def render_profile_info(proxy, token):
-    global browser_id, account_info
-
-    try:
-        np_session_info = load_session_info(proxy)
-
-        if not np_session_info:
-            # 生成新的浏览器ID
-            browser_id = uuidv4()
-            response = await call_api(DOMAIN_API["SESSION"], {}, proxy, token)
-            valid_resp(response)
-            account_info = response["data"]
-            if account_info.get("uid"):
-                save_session_info(proxy, account_info)
-                await start_ping(proxy, token)
-            else:
-                handle_logout(proxy)
-        else:
-            account_info = np_session_info
-            await start_ping(proxy, token)
-    except Exception as e:
-        # No error logging here
-        remove_proxy_from_list(proxy)
-        return None
-
-async def call_api(url, data, proxy, token):
-    user_agent = UserAgent(os=['windows', 'macos', 'linux'], browsers='chrome')
-    random_user_agent = user_agent.random
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "User-Agent": random_user_agent,
-        "Content-Type": "application/json",
-        "Origin": "chrome-extension://lgmpfmgeabnnlemejacfljbmonaomfmm",
-        "Accept": "application/json",
-        "Accept-Language": "en-US,en;q=0.5",
-    }
-
-    try:
-        response = requests.post(url, json=data, headers=headers, impersonate="chrome110", proxies={
-                                "http": proxy, "https": proxy}, timeout=30)
-
-        response.raise_for_status()
-        return valid_resp(response.json())
-    except Exception as e:
-        # No error logging here
-        pass
-
-async def start_ping(proxy, token):
-    try:
-        while True:
-            await ping(proxy, token)
-            await asyncio.sleep(PING_INTERVAL)
-    except asyncio.CancelledError:
-        pass
-    except Exception as e:
-        # No error logging here
-        pass
-
-async def ping(proxy, token):
-    global last_ping_time, RETRIES, status_connect
-
-    current_time = time.time()
-
-    if proxy in last_ping_time and (current_time - last_ping_time[proxy]) < PING_INTERVAL:
-        return
-
-    last_ping_time[proxy] = current_time
-
-    try:
-        data = {
-            "id": account_info.get("uid"),
-            "browser_id": browser_id,
-            "timestamp": int(time.time()),
-            "version": "2.2.7"
+class Nodepay:
+    def __init__(self) -> None:
+        self.headers = {
+            "Accept": "*/*",
+            "Accept-Language": "zh-CN,zh;q=0.9",  # 设置为中文
+            "Origin": "https://app.nodepay.ai",
+            "Referer": "https://app.nodepay.ai/",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "cross-site",
+            "User-Agent": FakeUserAgent().random
         }
+        self.proxies = []
+        self.proxy_index = 0
 
-        response = await call_api(DOMAIN_API["PING"], data, proxy, token)
-        if response["code"] == 0:
-            # 将IP分数翻译成中文
-            ip_score = response["data"].get("ip_score", "未知")
-            if isinstance(ip_score, (int, float)):
-                ip_score_chinese = f"{Fore.GREEN}IP分数: {ip_score}{Style.RESET_ALL}"
-            else:
-                ip_score_chinese = f"{Fore.YELLOW}IP分数: {ip_score}（非数值）{Style.RESET_ALL}"
-            
-            logger.info(f"{Fore.CYAN}Ping成功，代理 {proxy}，{ip_score_chinese}{Style.RESET_ALL}")
-            RETRIES = 0
-            status_connect = CONNECTION_STATES["已连接"]
-    except Exception as e:
-        # No error logging here
-        pass
+    def clear_terminal(self):
+        os.system('cls' if os.name == 'nt' else 'clear')
 
-def handle_ping_fail(proxy, response):
-    # No error logging here
-    pass
+    def log(self, message):
+        print(
+            f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+            f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}{message}",
+            flush=True
+        )
 
-def handle_logout(proxy):
-    # No error logging here
-    pass
+    def welcome(self):
+        print(
+            f"""
+        {Fore.GREEN + Style.BRIGHT}自动Ping {Fore.BLUE + Style.BRIGHT}Nodepay - 机器人
+            """
+            f"""
+        {Fore.GREEN + Style.BRIGHT}Rey? {Fore.YELLOW + Style.BRIGHT}<水印信息>
+            """
+        )
 
-def load_proxies(proxy_file):
-    try:
-        with open(proxy_file, 'r') as file:
-            proxies = file.read().splitlines()
-        return proxies
-    except Exception as e:
-        # No error logging here
-        raise SystemExit(f"{Fore.RED}由于加载代理失败，程序退出。{Style.RESET_ALL}")
+    def format_seconds(self, seconds):
+        hours, remainder = divmod(seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
+    
+    async def load_auto_proxies(self):
+        url = "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/all.txt"
+        try:
+            async with ClientSession(timeout=ClientTimeout(total=20)) as session:
+                async with session.get(url=url) as response:
+                    response.raise_for_status()
+                    content = await response.text()
+                    with open('proxy.txt', 'w') as f:
+                        f.write(content)
 
-def load_tokens(token_file):
-    try:
-        with open(token_file, 'r') as file:
-            tokens = file.read().splitlines()
-        return tokens
-    except Exception as e:
-        # No error logging here
-        raise SystemExit(f"{Fore.RED}由于加载令牌失败，程序退出。{Style.RESET_ALL}")
-
-def save_status(proxy, status):
-    pass
-
-def save_session_info(proxy, data):
-    data_to_save = {
-        "uid": data.get("uid"),
-        "browser_id": browser_id
-    }
-    pass
-
-def load_session_info(proxy):
-    return {}
-
-def is_valid_proxy(proxy):
-    return True
-
-def remove_proxy_from_list(proxy):
-    pass
-
-async def main():
-    clear_screen()
-    all_proxies = load_proxies('proxy.txt')
-    all_tokens = load_tokens('token.txt')
-
-    if not all_tokens:
-        print(f"{Fore.RED}在token.txt中未找到令牌。程序退出。{Style.RESET_ALL}")
-        exit()
-
-    # 确保每个token只分配一个代理
-    token_proxy_pairs = []
-    for i, token in enumerate(all_tokens):
-        if i < len(all_proxies):  # 确保有足够的代理可用
-            token_proxy_pairs.append((token, all_proxies[i]))
-        else:
-            logger.warning(f"{Fore.YELLOW}警告：代理数量不足，token {token[:8]}... 未分配代理{Style.RESET_ALL}")
-
-    while True:
-        choice = display_menu()
+                    self.proxies = content.splitlines()
+                    if not self.proxies:
+                        self.log(f"{Fore.RED + Style.BRIGHT}下载的代理列表中没有找到代理！{Style.RESET_ALL}")
+                        return
+                    
+                    self.log(f"{Fore.GREEN + Style.BRIGHT}代理成功下载.{Style.RESET_ALL}")
+                    self.log(f"{Fore.YELLOW + Style.BRIGHT}加载了 {len(self.proxies)} 个代理.{Style.RESET_ALL}")
+                    self.log(f"{Fore.CYAN + Style.BRIGHT}-{Style.RESET_ALL}"*75)
+                    await asyncio.sleep(3)
+        except Exception as e:
+            self.log(f"{Fore.RED + Style.BRIGHT}加载代理失败: {e}{Style.RESET_ALL}")
+            return []
         
-        if choice == "1":
-            print(f"{Fore.GREEN}启动节点...{Style.RESET_ALL}")
+    async def load_manual_proxy(self):
+        try:
+            if not os.path.exists('manual_proxy.txt'):
+                print(f"{Fore.RED + Style.BRIGHT}未找到代理文件 'manual_proxy.txt'！{Style.RESET_ALL}")
+                return
+
+            with open('manual_proxy.txt', "r") as f:
+                proxies = f.read().splitlines()
+
+            self.proxies = proxies
+            self.log(f"{Fore.YELLOW + Style.BRIGHT}加载了 {len(self.proxies)} 个代理.{Style.RESET_ALL}")
+            self.log(f"{Fore.CYAN + Style.BRIGHT}-{Style.RESET_ALL}"*75)
+            await asyncio.sleep(3)
+        except Exception as e:
+            print(f"{Fore.RED + Style.BRIGHT}加载手动代理失败: {e}{Style.RESET_ALL}")
+            self.proxies = []
+
+    def get_next_proxy(self):
+        if not self.proxies:
+            self.log(f"{Fore.RED + Style.BRIGHT}没有可用的代理！{Style.RESET_ALL}")
+            return None
+
+        proxy = self.proxies[self.proxy_index]
+        self.proxy_index = (self.proxy_index + 1) % len(self.proxies)
+        return proxy
+    
+    def check_proxy_schemes(self, proxies):
+        schemes = ["http://", "https://", "socks4://", "socks5://"]
+        if any(proxies.startswith(scheme) for scheme in schemes):
+            return proxies
+        
+        return f"http://{proxies}"
+    
+    def hide_token(self, token):
+        hide_token = token[:3] + '*' * 3 + token[-3:]
+        return hide_token
+    
+    async def user_session(self, token: str, proxy=None):
+        url = "http://api.nodepay.ai/api/auth/session"
+        headers = {
+            **self.headers,
+            "Authorization": f"Bearer {token}",
+            "Content-Length": "2",
+            "Content-Type": "application/json",
+        }
+        connector = ProxyConnector.from_url(proxy) if proxy else None
+        try:
+            async with ClientSession(connector=connector, timeout=ClientTimeout(total=30)) as session:
+                async with session.post(url=url, headers=headers, json={}) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    return result['data']
+        except (Exception, ClientResponseError) as e:
+            return None
+    
+    async def user_earning(self, token: str, proxy=None):
+        url = "http://api.nodepay.ai/api/earn/info"
+        headers = {
+            **self.headers,
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        connector = ProxyConnector.from_url(proxy) if proxy else None
+        try:
+            async with ClientSession(connector=connector, timeout=ClientTimeout(total=30)) as session:
+                async with session.get(url=url, headers=headers) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    return result['data']
+        except (Exception, ClientResponseError) as e:
+            return None
+    
+    async def mission_lists(self, token: str, proxy=None):
+        url = "http://api.nodepay.ai/api/mission"
+        headers = {
+            **self.headers,
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        connector = ProxyConnector.from_url(proxy) if proxy else None
+        try:
+            async with ClientSession(connector=connector, timeout=ClientTimeout(total=30)) as session:
+                async with session.get(url=url, headers=headers) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    return result['data']
+        except (Exception, ClientResponseError) as e:
+            return None
+    
+    async def complete_missions(self, token: str, mission_id: str, proxy=None):
+        url = "http://api.nodepay.ai/api/mission/complete-mission"
+        data = json.dumps({'mission_id':mission_id})
+        headers = {
+            **self.headers,
+            "Authorization": f"Bearer {token}",
+            "Content-Length": str(len(data)),
+            "Content-Type": "application/json",
+        }
+        connector = ProxyConnector.from_url(proxy) if proxy else None
+        try:
+            async with ClientSession(connector=connector, timeout=ClientTimeout(total=30)) as session:
+                async with session.post(url=url, headers=headers, data=data) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    return result['data']
+        except (Exception, ClientResponseError) as e:
+            return None
+
+    def send_ping(self, token: str, id: str, proxy=None, retries=60):
+        url = "https://nw.nodepay.org/api/network/ping"
+        data = json.dumps({
+            "id":id, 
+            "browser_id":str(uuid.uuid4()), 
+            "timestamp":int(time.time()), 
+            "version":"2.2.7"
+        })
+        headers = {
+            "Accept": "*/*",
+            "Accept-Language": "zh-CN,zh;q=0.9",  # 设置为中文
+            "Authorization": f"Bearer {token}",
+            "Content-Length": str(len(data)),
+            "Content-Type": "application/json",
+            "Origin": "chrome-extension://lgmpfmgeabnnlemejacfljbmonaomfmm",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "cross-site",
+            "User-Agent": FakeUserAgent().random
+        }
+        for attempt in range(retries):
+            try:
+                response = requests.post(
+                    url=url, 
+                    headers=headers, 
+                    data=data, 
+                    proxies={"http": proxy, "https": proxy} if proxy else None, 
+                    timeout=30, 
+                    impersonate="safari15_5"
+                )
+                response.raise_for_status()
+                result = response.json()
+                return result['data']
+            except requests.RequestsError as e:
+                if attempt < retries - 1:
+                    continue
+                return None
+        
+    async def connection_state(self, token, username, id, proxy):
+        while True:
+            result = await asyncio.to_thread(self.send_ping, token, id, proxy)
+            if result and isinstance(result, dict):
+                ip_score = result.get("ip_score")
+                if ip_score is not None:
+                    self.log(
+                        f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                        f"{Fore.GREEN + Style.BRIGHT}Ping成功{Style.RESET_ALL} "
+                        f"{Fore.WHITE + Style.BRIGHT}使用代理 {proxy} {Style.RESET_ALL}"
+                        f"{Fore.MAGENTA + Style.BRIGHT}] [ Ip分数{Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT} {ip_score} {Style.RESET_ALL} "
+                        f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+                    )
+            else:
+                self.log(
+                    f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                    f"{Fore.YELLOW + Style.BRIGHT}Ping失败{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} 使用代理 {proxy} {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
+                    f"{Fore.BLUE + Style.BRIGHT} 正在尝试下一个代理... {Style.RESET_ALL}"
+                )
+                proxy = self.get_next_proxy()
+                if not proxy:
+                    self.log(
+                        f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                        f"{Fore.RED + Style.BRIGHT}没有找到代理{Style.RESET_ALL}"
+                        f"{Fore.MAGENTA + Style.BRIGHT} ]{Style.RESET_ALL}"
+                    )
+                    break
+                proxy = self.check_proxy_schemes(proxy)
+
+            print(
+                f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+                f"{Fore.BLUE + Style.BRIGHT}下一次Ping将在1分钟后进行{Style.RESET_ALL}"
+                f"{Fore.YELLOW + Style.BRIGHT} 等待... {Style.RESET_ALL}",
+                end="\r"
+            )
+            await asyncio.sleep(60)
+        
+    async def question(self):
+        while True:
+            try:
+                print("1. 使用自动代理运行")
+                print("2. 使用手动代理运行")
+                print("3. 不使用代理运行")
+                choose = int(input("请选择 [1/2/3] -> ").strip())
+
+                if choose in [1, 2, 3]:
+                    proxy_type = (
+                        "使用自动代理" if choose == 1 else 
+                        "使用手动代理" if choose == 2 else 
+                        "不使用代理"
+                    )
+                    print(f"{Fore.GREEN + Style.BRIGHT}选择了 {proxy_type} 模式.{Style.RESET_ALL}")
+                    await asyncio.sleep(1)
+                    return choose
+                else:
+                    print(f"{Fore.RED + Style.BRIGHT}请输入1、2或3.{Style.RESET_ALL}")
+            except ValueError:
+                print(f"{Fore.RED + Style.BRIGHT}无效输入。请输入数字（1、2或3）。{Style.RESET_ALL}")
+            
+    async def process_accounts(self, token: str, use_proxy: bool):
+    # 隐藏token信息，提升安全性
+    hide_token = self.hide_token(token)
+    proxy = None
+
+    if not use_proxy:
+        # 不使用代理时，直接获取用户信息和收益信息
+        user = await self.user_session(token)
+        earn = await self.user_earning(token)
+        
+        if not user or not earn:
+            # 登录失败日志输出
+            self.log(
+                f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} {hide_token} {Style.RESET_ALL}"
+                f"{Fore.RED + Style.BRIGHT} 登录失败{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} 无代理 {proxy} {Style.RESET_ALL}"
+                f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+            )
+            return
+        
+        # 获取用户名和用户ID
+        username = user['name']
+        id = user['uid']
+        
+        # 登录成功并输出用户收益情况
+        self.log(
+            f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+            f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+            f"{Fore.GREEN + Style.BRIGHT} 登录成功{Style.RESET_ALL}"
+            f"{Fore.MAGENTA + Style.BRIGHT} ] [ 收益{Style.RESET_ALL}"
+            f"{Fore.WHITE + Style.BRIGHT} 总计 {earn['total_earning']} 积分 {Style.RESET_ALL}"
+            f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+            f"{Fore.WHITE + Style.BRIGHT} 今日 {earn['today_earning']} 积分 {Style.RESET_ALL}"
+            f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+        )
+        await asyncio.sleep(1)
+
+        # 获取任务列表
+        missions = await self.mission_lists(token)
+        if missions:
+            completed = False
+            for mission in missions:
+                mission_id = mission['id']
+                status = mission['status']
+                if mission and status == "AVAILABLE":
+                    # 完成任务
+                    complete = await self.complete_missions(token, mission_id)
+                    if complete:
+                        self.log(
+                            f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                            f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT} {mission['title']} {Style.RESET_ALL}"
+                            f"{Fore.GREEN + Style.BRIGHT} 已完成{Style.RESET_ALL}"
+                            f"{Fore.MAGENTA + Style.BRIGHT} ] [ 奖励{Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT} {mission['point']} {Style.RESET_ALL}"
+                            f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+                        )
+                    else:
+                        self.log(
+                            f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                            f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT} {mission['title']} {Style.RESET_ALL}"
+                            f"{Fore.RED + Style.BRIGHT} 未完成{Style.RESET_ALL}"
+                            f"{Fore.MAGENTA + Style.BRIGHT} ]{Style.RESET_ALL}"
+                        )
+                else:
+                    completed = True
+
+            if completed:
+                self.log(
+                    f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+                    f"{Fore.GREEN + Style.BRIGHT} 可用任务已完成 {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+                )
+        else:
+            self.log(
+                f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+                f"{Fore.RED + Style.BRIGHT} 任务数据为空 {Style.RESET_ALL}"
+                f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+            )
+        await asyncio.sleep(1)
+
+        # 输出正在进行的ping请求状态
+        print(
+            f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+            f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+            f"{Fore.BLUE + Style.BRIGHT} 正在发送 Ping,{Style.RESET_ALL}"
+            f"{Fore.YELLOW + Style.BRIGHT} 等待中... {Style.RESET_ALL}",
+            end="\r",
+            flush=True
+        )
+        await asyncio.sleep(1)
+
+        while True:
+            ping = self.send_ping(token, id)
+            if not ping:
+                self.log(
+                    f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                    f"{Fore.YELLOW + Style.BRIGHT} Ping失败{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} 无代理 {proxy} {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+                )
+                await asyncio.sleep(1)
+
+                print(
+                    f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+                    f"{Fore.BLUE + Style.BRIGHT} 下一次Ping在1分钟后.{Style.RESET_ALL}"
+                    f"{Fore.YELLOW + Style.BRIGHT} 等待中... {Style.RESET_ALL}",
+                    end="\r"
+                )
+                await asyncio.sleep(60)
+                continue
+
+            self.log(
+                f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                f"{Fore.GREEN + Style.BRIGHT} Ping成功{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} 无代理 {proxy} {Style.RESET_ALL}"
+                f"{Fore.MAGENTA + Style.BRIGHT}] [ IP得分{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} {ping['ip_score']} {Style.RESET_ALL}"
+                f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+            )
+            await asyncio.sleep(1)
+
+            print(
+                f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+                f"{Fore.BLUE + Style.BRIGHT} 下一次Ping在1分钟后.{Style.RESET_ALL}"
+                f"{Fore.YELLOW + Style.BRIGHT} 等待中... {Style.RESET_ALL}",
+                end="\r"
+            )
+            await asyncio.sleep(60)
+
+    else:
+        # 使用代理时，获取代理并循环进行尝试
+        user = None
+        earn = None
+        proxies = self.get_next_proxy()
+        proxy = self.check_proxy_schemes(proxies)
+
+        while user is None or earn is None:
+            user = await self.user_session(token, proxy)
+            earn = await self.user_earning(token, proxy)
+
+            if not user or not earn:
+                self.log(
+                    f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} {hide_token} {Style.RESET_ALL}"
+                    f"{Fore.RED + Style.BRIGHT} 登录失败{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} 使用代理 {proxy} {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+                )
+                await asyncio.sleep(1)
+
+                print(
+                    f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+                    f"{Fore.BLUE + Style.BRIGHT} 正在尝试下一个代理,{Style.RESET_ALL}"
+                    f"{Fore.YELLOW + Style.BRIGHT} 等待中... {Style.RESET_ALL}",
+                    end="\r",
+                    flush=True
+                )
+
+                proxies = self.get_next_proxy()
+                proxy = self.check_proxy_schemes(proxies)
+                continue
+        
+        # 用户登录成功后的操作与不使用代理时类似
+        username = user['name']
+        id = user['uid']
+
+        self.log(
+            f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+            f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+            f"{Fore.GREEN + Style.BRIGHT} 登录成功{Style.RESET_ALL}"
+            f"{Fore.MAGENTA + Style.BRIGHT} ] [ 收益{Style.RESET_ALL}"
+            f"{Fore.WHITE + Style.BRIGHT} 总计 {earn['total_earning']} 积分 {Style.RESET_ALL}"
+            f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+            f"{Fore.WHITE + Style.BRIGHT} 今日 {earn['today_earning']} 积分 {Style.RESET_ALL}"
+            f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+        )
+        await asyncio.sleep(1)
+
+        # 获取任务列表并处理
+        missions = await self.mission_lists(token, proxy)
+        if missions:
+            completed = False
+            for mission in missions:
+                mission_id = mission['id']
+                status = mission['status']
+                if mission and status == "AVAILABLE":
+                    complete = await self.complete_missions(token, mission_id, proxy)
+                    if complete:
+                        self.log(
+                            f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                            f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT} {mission['title']} {Style.RESET_ALL}"
+                            f"{Fore.GREEN + Style.BRIGHT} 已完成{Style.RESET_ALL}"
+                            f"{Fore.MAGENTA + Style.BRIGHT} ] [ 奖励{Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT} {mission['point']} {Style.RESET_ALL}"
+                            f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+                        )
+                    else:
+                        self.log(
+                            f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                            f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT} {mission['title']} {Style.RESET_ALL}"
+                            f"{Fore.RED + Style.BRIGHT} 未完成{Style.RESET_ALL}"
+                            f"{Fore.MAGENTA + Style.BRIGHT} ]{Style.RESET_ALL}"
+                        )
+                else:
+                    completed = True
+
+            if completed:
+                self.log(
+                    f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+                    f"{Fore.GREEN + Style.BRIGHT} 可用任务已完成 {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+                )
+        else:
+            self.log(
+                f"{Fore.MAGENTA + Style.BRIGHT}[ 账号{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} {username} {Style.RESET_ALL}"
+                f"{Fore.MAGENTA + Style.BRIGHT} -{Style.RESET_ALL}"
+                f"{Fore.RED + Style.BRIGHT} 任务数据为空 {Style.RESET_ALL}"
+                f"{Fore.MAGENTA + Style.BRIGHT}]{Style.RESET_ALL}"
+            )
+        await asyncio.sleep(1)
+
+        # 输出正在进行的ping请求状态
+        print(
+            f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+            f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+            f"{Fore.BLUE + Style.BRIGHT} 正在发送 Ping,{Style.RESET_ALL}"
+            f"{Fore.YELLOW + Style.BRIGHT} 等待中... {Style.RESET_ALL}",
+            end="\r",
+            flush=True
+        )
+        await asyncio.sleep(1)
+
+        # 选择多个代理并进行连接状态验证
+        selected_proxies = []
+
+        for _ in range(3):
+            proxy = self.get_next_proxy()
+            if proxy:
+                selected_proxies.append(self.check_proxy_schemes(proxy))
+
+        # 创建多个任务进行并发处理
+        tasks = [
+            asyncio.create_task(self.connection_state(token, username, id, proxy))
+            for proxy in selected_proxies
+        ]
+        await asyncio.gather(*tasks)
+
+    
+    async def main(self):
+        try:
+            with open('tokens.txt', 'r') as file:
+                tokens = [line.strip() for line in file if line.strip()]
+
+            use_proxy_choice = await self.question()
+
+            use_proxy = False
+            if use_proxy_choice in [1, 2]:
+                use_proxy = True
+
+            self.clear_terminal()
+            self.welcome()
+            self.log(
+                f"{Fore.GREEN + Style.BRIGHT}总账户数: {Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT}{len(tokens)}{Style.RESET_ALL}"
+            )
+            self.log(f"{Fore.CYAN + Style.BRIGHT}-{Style.RESET_ALL}"*75)
+
+            if use_proxy and use_proxy_choice == 1:
+                await self.load_auto_proxies()
+            elif use_proxy and use_proxy_choice == 2:
+                await self.load_manual_proxy()
+
             while True:
                 tasks = []
-                # 为每个token-proxy对创建任务
-                for token, proxy in token_proxy_pairs:
-                    task = asyncio.create_task(render_profile_info(proxy, token))
-                    tasks.append(task)
+                for token in tokens:
+                    token = token.strip()
+                    if token:
+                        tasks.append(self.process_accounts(token, use_proxy))
 
-                if tasks:
-                    await asyncio.gather(*tasks)
-                await asyncio.sleep(10)
-        elif choice == "2":
-            register_accounts()
-        else:
-            print(f"{Fore.RED}无效的选项。请选择1或2。{Style.RESET_ALL}")
+                await asyncio.gather(*tasks)
 
-if __name__ == '__main__':
-    show_warning()
-    print(f"\n{Fore.GREEN}现在运行...{Style.RESET_ALL}")
+        except FileNotFoundError:
+            self.log(f"{Fore.RED}文件 'tokens.txt' 未找到。{Style.RESET_ALL}")
+            return
+        except Exception as e:
+            self.log(f"{Fore.RED+Style.BRIGHT}错误: {e}{Style.RESET_ALL}")
+
+if __name__ == "__main__":
     try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        # No error logging here
-        exit()
+        bot = Nodepay()
+        asyncio.run(bot.main())
+    except KeyboardInterrupt:
+        print(
+            f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+            f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+            f"{Fore.RED + Style.BRIGHT}[ 退出 ] Nodepay - 机器人{Style.RESET_ALL}                                       "                              
+        )
