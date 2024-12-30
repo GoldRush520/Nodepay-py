@@ -1,6 +1,6 @@
-asyncio
 aiohttp
-uuid
-cloudscraper
-loguru
+curl-cffi
+aiohttp-socks
 colorama
+fake-useragent
+pytz
