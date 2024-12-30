@@ -10,14 +10,13 @@ from datetime import datetime
 from fake_useragent import FakeUserAgent
 import asyncio, time, json, os, uuid, pytz
 
-# 设置时区为雅加达时区（可以根据需要修改为北京时间）
-wib = pytz.timezone('Asia/Jakarta')
+wib = pytz.timezone('Asia/Shanghai')
 
 class Nodepay:
     def __init__(self) -> None:
         self.headers = {
             "Accept": "*/*",
-            "Accept-Language": "zh-CN,zh;q=0.9",  # 设置为中文
+            "Accept-Language": "zh-CN,zh;q=0.9", 
             "Origin": "https://app.nodepay.ai",
             "Referer": "https://app.nodepay.ai/",
             "Sec-Fetch-Dest": "empty",
