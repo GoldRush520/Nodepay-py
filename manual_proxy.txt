@@ -1,0 +1,7 @@
+ip:port（http 或 socks5 - 在 108 行更改协议）
+http://ip:port
+socks4://ip:port
+socks5://ip:port
+http://ip:port@user:pass（不确定是否有效，因为我没有认证代理）
+socks4://ip:port@user:pass（不确定是否有效，因为我没有认证代理）
+socks5://ip:port@user:pass（不确定是否有效，因为我没有认证代理）
